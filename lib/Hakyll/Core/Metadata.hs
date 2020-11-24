@@ -7,7 +7,6 @@ module Hakyll.Core.Metadata
     , MonadMetadata (..)
     , getMetadataField
     , getMetadataField'
-    , makePatternDependency
 
     , BinaryMetadata (..)
     ) where
@@ -23,8 +22,7 @@ import qualified Data.HashMap.Strict            as HMS
 import qualified Data.Set                       as S
 import qualified Data.Text                      as T
 import qualified Data.Vector                    as V
-import qualified Data.Yaml.Extended                      as Yaml
-import           Hakyll.Core.Dependencies
+import qualified Data.Yaml.Extended             as Yaml
 import           Hakyll.Core.Identifier
 import           Hakyll.Core.Identifier.Pattern
 
@@ -74,13 +72,6 @@ getMetadataField' identifier key = do
         Just v  -> return v
         Nothing -> fail $ "Hakyll.Core.Metadata.getMetadataField': " ++
             "Item " ++ show identifier ++ " has no metadata field " ++ show key
-
-
---------------------------------------------------------------------------------
-makePatternDependency :: MonadMetadata m => Pattern -> m Dependency
-makePatternDependency pattern = do
-    matches' <- getMatches pattern
-    return $ PatternDependency pattern (S.fromList matches')
 
 
 --------------------------------------------------------------------------------

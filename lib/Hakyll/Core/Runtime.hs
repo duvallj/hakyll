@@ -142,7 +142,7 @@ scheduleOutOfDate = do
         modified    = S.fromList $ flip filter identifiers $
             resourceModified provider
 
-    let (ood, facts', msgs) = outOfDate identifiers modified facts
+    let (ood, facts', msgs) = outOfDate identifiers provider modified facts
         todo'               = M.filterWithKey
             (\id' _ -> id' `S.member` ood) universe
 

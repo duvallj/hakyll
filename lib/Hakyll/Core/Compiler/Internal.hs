@@ -353,11 +353,16 @@ compilerTellCacheHits ch = compilerTell mempty {compilerCacheHits = ch}
 
 
 --------------------------------------------------------------------------------
-compilerGetMetadata :: Identifier -> Compiler Metadata
+compilerGetMetadataNoDependency :: Identifier -> Compiler Metadata
 compilerGetMetadata identifier = do
     provider <- compilerProvider <$> compilerAsk
-    compilerTellDependencies [IdentifierDependency identifier]
     compilerUnsafeIO $ resourceMetadata provider identifier
+
+--------------------------------------------------------------------------------
+compilerGetMetadata :: Identifier -> Compiler Metadata
+compilerGetMetadata identifier = do
+    metadata <- compilerGetMetadataNoDependency identifier
+    compilerTellDependencies [MetadataDependency identifier metadata]
 
 
 --------------------------------------------------------------------------------
