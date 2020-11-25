@@ -142,8 +142,9 @@ scheduleOutOfDate = do
         modified    = S.fromList $ flip filter identifiers $
             resourceModified provider
 
-    let (ood, facts', msgs) = outOfDate identifiers provider modified facts
-        todo'               = M.filterWithKey
+    (ood, facts', msgs) <- liftIO $ outOfDate identifiers provider modified facts
+    
+    let todo'               = M.filterWithKey
             (\id' _ -> id' `S.member` ood) universe
 
     -- Print messages
