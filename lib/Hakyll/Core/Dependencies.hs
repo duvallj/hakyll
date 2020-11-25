@@ -11,9 +11,8 @@ module Hakyll.Core.Dependencies
 --------------------------------------------------------------------------------
 import           Control.Monad                  (foldM, forM_, unless, when)
 import           Control.Monad.Reader           (ask)
-import           Control.Monad.RWS             (RWST, runRWST)
+import           Control.Monad.RWS              (RWS, runRWS)
 import qualified Control.Monad.State            as State
-import           Control.Monad.Trans            (liftIO)
 import           Control.Monad.Writer           (tell)
 import           Data.Binary                    (Binary (..), getWord8,
                                                  putWord8)
@@ -29,14 +28,13 @@ import           Data.Typeable                  (Typeable)
 import           Hakyll.Core.Identifier
 import           Hakyll.Core.Identifier.Pattern
 import           Hakyll.Core.Metadata
-import           Hakyll.Core.Provider           (Provider, resourceMetadata)
 
 
 --------------------------------------------------------------------------------
 data Dependency
     = PatternDependency Pattern (Set Identifier)
     | IdentifierDependency Identifier
-    | MetadataDependency Identifier Metadata
+    | MetadataDependency Identifier
     deriving (Show, Typeable)
 
 
@@ -44,11 +42,11 @@ data Dependency
 instance Binary Dependency where
     put (PatternDependency p is) = putWord8 0 >> put p >> put is
     put (IdentifierDependency i) = putWord8 1 >> put i
-    put (MetadataDependency i meta) = putWord8 2 >> put i >> put (BinaryMetadata meta)
+    put (MetadataDependency i) = putWord8 2 >> put i
     get = getWord8 >>= \t -> case t of
         0 -> PatternDependency <$> get <*> get
         1 -> IdentifierDependency <$> get
-        2 -> (\i meta -> MetadataDependency i $ unBinaryMetadata meta) <$> get <*> get
+        2 -> MetadataDependency <$> get
         _ -> error "Data.Binary.get: Invalid Dependency"
 
 --------------------------------------------------------------------------------
@@ -65,23 +63,21 @@ type DependencyFacts = Map Identifier [Dependency]
 --------------------------------------------------------------------------------
 outOfDate
     :: [Identifier]     -- ^ All known identifiers
-    -> Provider         -- ^ Current compiler provider
     -> Set Identifier   -- ^ Initially out-of-date resources
     -> DependencyFacts  -- ^ Old dependency facts
-    -> IO (Set Identifier, DependencyFacts, [String])
-outOfDate universe provider ood oldFacts = do
-    (_, state', logs) <- runRWST actions depread depstate
-    return ( S.union (dependencyOod state') (dependencyMetadataOod state')
-           , dependencyFacts state'
-           , logs
-           )
+    -> (Set Identifier, DependencyFacts, [String])
+outOfDate universe ood oldFacts =
+    let (_, state', logs) = runRWS actions depread depstate
+    in ( S.unions [dependencyOod state', dependencyMetadataOod state']
+       , dependencyFacts state'
+       , logs
+       )
   where
-    depread = DependencyRead universe provider
+    depread = DependencyRead universe
     depstate = DependencyState oldFacts ood S.empty
     actions = do
         checkNew
         checkChangedPatterns
-        checkChangedMetadata
         bruteForceDirect
         bruteForceMetadata
 
@@ -89,7 +85,6 @@ outOfDate universe provider ood oldFacts = do
 --------------------------------------------------------------------------------
 data DependencyRead = DependencyRead
     { dependencyIds      :: [Identifier]
-    , dependencyProvider :: Provider
     }
 
 --------------------------------------------------------------------------------
@@ -101,7 +96,7 @@ data DependencyState = DependencyState
 
 
 --------------------------------------------------------------------------------
-type DependencyM a = RWST DependencyRead [String] DependencyState IO a
+type DependencyM a = RWS DependencyRead [String] DependencyState a
 
 
 --------------------------------------------------------------------------------
@@ -126,7 +121,7 @@ directDependenciesFor id' = do
     dependenciesFor' (PatternDependency _ is) = S.toList is
     -- Metadata dependencies are nothing because out-of-date metadata handled
     -- separately
-    dependenciesFor' (MetadataDependency _ _) = []
+    dependenciesFor' (MetadataDependency _) = []
 
 
 --------------------------------------------------------------------------------
@@ -137,7 +132,7 @@ metadataDependenciesFor id' = do
   where
     dependenciesFor' (IdentifierDependency _) = []
     dependenciesFor' (PatternDependency _ _) = []
-    dependenciesFor' (MetadataDependency i _) = [i]
+    dependenciesFor' (MetadataDependency i) = [i]
 
 
 --------------------------------------------------------------------------------
@@ -170,30 +165,9 @@ checkChangedPatterns = do
                 tell [show id' ++ " is out-of-date because a pattern changed"]
                 markOod id'
                 return $ PatternDependency p ls' : ds
-    changedPatterns _   ds (MetadataDependency i meta) = 
-        return $ MetadataDependency i meta : ds
+    changedPatterns _   ds (MetadataDependency i) = 
+        return $ MetadataDependency i : ds
 
-
---------------------------------------------------------------------------------
-checkChangedMetadata :: DependencyM ()
-checkChangedMetadata = do
-    facts <- M.toList . dependencyFacts <$> State.get
-    forM_ facts $ \(id', deps) -> forM_ deps (changedMetadata id')
-  where
-    changedMetadata _   (IdentifierDependency _) = 
-        return ()
-    changedMetadata _   (PatternDependency _ _) = 
-        return ()
-    changedMetadata id' (MetadataDependency i meta) = do
-        provider <- dependencyProvider <$> ask
-        meta' <- liftIO $ resourceMetadata provider id'
-        if meta == meta'
-           then return ()
-           else do
-               tell [show id' ++ " is out-of-date because the metadata from "
-                    ++ show i ++ " changed"]
-               markMetadataOod id'
-               return ()
 
 --------------------------------------------------------------------------------
 bruteForceDirect :: DependencyM ()
@@ -226,12 +200,12 @@ bruteForceMetadata = do
   where
     checkId id' = do
         deps <- metadataDependenciesFor id'
-        ood <- dependencyMetadataOod <$> State.get
+        ood <- dependencyOod <$> State.get
         case find (`S.member` ood) deps of
             Nothing -> return ()
             Just d  -> do
                 tell [show id' ++ " is out-of-date because " ++
                     show d ++ " has out-of-date metadata"]
-                markOod id'
+                markMetadataOod id'
                 return ()
 
