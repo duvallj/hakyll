@@ -81,6 +81,7 @@ import qualified Text.Blaze.Html5.Attributes     as A
 
 --------------------------------------------------------------------------------
 import           Hakyll.Core.Compiler
+import           Hakyll.Core.Compiler.Internal
 import           Hakyll.Core.Dependencies
 import           Hakyll.Core.Identifier
 import           Hakyll.Core.Identifier.Pattern
@@ -171,9 +172,11 @@ renderTags makeHtml concatHtml tags = do
     -- In tags' we create a list: [((tag, route), count)]
     tags' <- forM (tagsMap tags) $ \(tag, ids) -> do
         route' <- getRoute $ tagsMakeId tags tag
+        -- TODO: this is a bit of a hack, but does tell the Compiler that this
+        -- rendered tag page has a dependency on the tag changes
+        compilerTellDependencies (map MetadataDependency ids)
+        
         return ((tag, route'), length ids)
-
-    -- TODO: We actually need to tell a dependency here!
 
     let -- Absolute frequencies of the pages
         freqs = map snd tags'
