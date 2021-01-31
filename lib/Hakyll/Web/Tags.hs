@@ -172,11 +172,11 @@ renderTags makeHtml concatHtml tags = do
     -- In tags' we create a list: [((tag, route), count)]
     tags' <- forM (tagsMap tags) $ \(tag, ids) -> do
         route' <- getRoute $ tagsMakeId tags tag
-        -- TODO: this is a bit of a hack, but does tell the Compiler that this
-        -- rendered tag page has a dependency on the tag changes
-        compilerTellDependencies (map MetadataDependency ids)
-        
         return ((tag, route'), length ids)
+
+    -- tell the Compiler that this rendered tag page has a dependency on the
+    -- generated tag pages
+    compilerTellDependencies [tagsDependency tags]
 
     let -- Absolute frequencies of the pages
         freqs = map snd tags'
